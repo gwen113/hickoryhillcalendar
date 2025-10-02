@@ -1,0 +1,181 @@
+<style>
+  h2 { color: #2F5D50; text-align:center; }
+  #calendar-container { max-width: 500px; margin: 20px auto; font-family: Arial, sans-serif; }
+  #month-nav { display: flex; justify-content: space-between; margin-bottom: 10px; }
+  button.nav { background: #2F5D50; color: #fff; border: none; padding: 5px 10px; cursor: pointer; }
+  #calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .day { padding: 10px; text-align: center; cursor: pointer; border: 1px solid #ccc; background: #fff; transition: 0.2s; }
+  .day:hover { background: #2F5D50; color: #fff; }
+  .booked { background: #e74c3c; color: #fff; cursor: not-allowed; border-radius: 4px; }
+  .selected { background: #2F5D50; color: #fff; }
+  .selected.start { border-top-left-radius: 50%; border-bottom-left-radius: 50%; }
+  .selected.end { border-top-right-radius: 50%; border-bottom-right-radius: 50%; }
+  .preview { background: rgba(47,93,80,0.5); color: #fff; }
+  .preview.start { border-top-left-radius: 50%; border-bottom-left-radius: 50%; }
+  .preview.end { border-top-right-radius: 50%; border-bottom-right-radius: 50%; }
+  #summary { margin-top: 20px; font-size: 16px; text-align:center; }
+  #addons { margin-top: 15px; text-align:center; }
+  #paypal-button-container { margin-top:20px; text-align:center; }
+</style>
+
+<h2>Book Your Stay</h2>
+<div id="calendar-container">
+  <div id="month-nav">
+    <button class="nav" id="prevMonth">&lt; Prev</button>
+    <span id="monthYear"></span>
+    <button class="nav" id="nextMonth">Next &gt;</button>
+  </div>
+  <div id="calendar"></div>
+</div>
+
+<div id="addons">
+  <label><input type="checkbox" id="riverShack" /> Add River Shack Access (+$100 per stay)</label>
+</div>
+
+<div id="summary"></div>
+<div id="paypal-button-container"></div>
+
+<script src="https://www.paypal.com/sdk/js?client-id=YOUR_PAYPAL_CLIENT_ID&currency=USD"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const calendar = document.getElementById("calendar");
+  const summary = document.getElementById("summary");
+  const monthYear = document.getElementById("monthYear");
+  const prevMonthBtn = document.getElementById("prevMonth");
+  const nextMonthBtn = document.getElementById("nextMonth");
+  const riverShackCheckbox = document.getElementById("riverShack");
+
+  const nightlyRate = 290;
+  const riverShackFee = 100;
+
+  let bookedDates = ["2025-10-05","2025-10-06","2025-11-15"];
+  let selectedRange = [];
+  let currentMonth = new Date().getMonth();
+  let currentYear = new Date().getFullYear();
+  let rangeStart = null;
+
+  function renderCalendar(month = currentMonth, year = currentYear) {
+    calendar.innerHTML = "";
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month+1, 0).getDate();
+    monthYear.textContent = new Date(year, month).toLocaleString('default', {month: 'long'}) + " " + year;
+
+    for(let i=0; i<firstDay; i++) calendar.appendChild(document.createElement("div"));
+
+    for(let i=1; i<=daysInMonth; i++){
+      const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
+      const div = document.createElement("div");
+      div.classList.add("day");
+      div.textContent = i;
+
+      if(bookedDates.includes(dateStr)){
+        div.classList.add("booked");
+      } else {
+        div.addEventListener("click", () => selectRange(dateStr));
+        div.addEventListener("mouseenter", () => hoverPreview(dateStr));
+        div.addEventListener("mouseleave", () => renderCalendar());
+      }
+
+      if(selectedRange.includes(dateStr)){
+        div.classList.add("selected");
+        if(dateStr === selectedRange[0]) div.classList.add("start");
+        if(dateStr === selectedRange[selectedRange.length-1]) div.classList.add("end");
+      }
+      calendar.appendChild(div);
+    }
+    updateSummary();
+  }
+
+  function generateDateRange(startStr, endStr){
+    const range = [];
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    const step = start <= end ? 1 : -1;
+    let current = new Date(start);
+    while((step===1 && current <= end) || (step===-1 && current >= end)){
+      const dStr = `${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
+      if(bookedDates.includes(dStr)) break;
+      range.push(dStr);
+      current.setDate(current.getDate()+step);
+    }
+    return range;
+  }
+
+  function selectRange(dateStr){
+    if(!rangeStart){
+      rangeStart = dateStr;
+      selectedRange = [dateStr];
+    } else {
+      selectedRange = generateDateRange(rangeStart, dateStr);
+      if(selectedRange.length === 0){
+        alert("Selected range includes already booked dates! Start over.");
+        rangeStart = null;
+        renderCalendar();
+        return;
+      }
+      rangeStart = null;
+    }
+    renderCalendar();
+  }
+
+  function hoverPreview(hoverDate){
+    if(!rangeStart) return;
+    const previewRange = generateDateRange(rangeStart, hoverDate);
+    document.querySelectorAll(".day").forEach(div => {
+      const day = div.textContent;
+      const divMonth = currentMonth + 1;
+      const dateStr = `${currentYear}-${String(divMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      if(previewRange.includes(dateStr)){
+        div.classList.add("preview");
+        if(dateStr === previewRange[0]) div.classList.add("start");
+        if(dateStr === previewRange[previewRange.length-1]) div.classList.add("end");
+      }
+    });
+  }
+
+  function updateSummary(){
+    if(selectedRange.length){
+      const nights = selectedRange.length;
+      const addonFee = riverShackCheckbox.checked ? riverShackFee : 0;
+      const total = nights*nightlyRate + addonFee;
+      summary.innerHTML = `
+        Selected Dates: ${selectedRange.join(", ")}<br>
+        Nights: ${nights}<br>
+        Nightly Rate: $${nightlyRate}<br>
+        ${riverShackCheckbox.checked ? "River Shack Access: $"+riverShackFee+"<br>" : ""}
+        <strong>Total: $${total}</strong>
+      `;
+    } else summary.innerHTML = "";
+  }
+
+  riverShackCheckbox.addEventListener("change", updateSummary);
+
+  prevMonthBtn.addEventListener("click", () => {
+    currentMonth--; if(currentMonth<0){ currentMonth=11; currentYear--; } renderCalendar();
+  });
+  nextMonthBtn.addEventListener("click", () => {
+    currentMonth++; if(currentMonth>11){ currentMonth=0; currentYear++; } renderCalendar();
+  });
+
+  paypal.Buttons({
+    createOrder: (data, actions) => {
+      if(!selectedRange.length){ alert("Select your dates first!"); return; }
+      const addonFee = riverShackCheckbox.checked ? riverShackFee : 0;
+      const total = selectedRange.length*nightlyRate + addonFee;
+      return actions.order.create({
+        purchase_units: [{ description: "Rental Booking", amount: { value: total.toString() } }]
+      });
+    },
+    onApprove: (data, actions) => {
+      return actions.order.capture().then(details => {
+        alert("Payment completed by " + details.payer.name.given_name);
+        bookedDates = bookedDates.concat(selectedRange);
+        selectedRange = [];
+        renderCalendar();
+      });
+    }
+  }).render('#paypal-button-container');
+
+  renderCalendar();
+});
+</script>
